@@ -1,7 +1,28 @@
+#==================CLEAN UP WORKSPACE================
+
+# rm(list=ls())
+
+#===================WORKING ENVIRONMENT===============
+
+# Load or install necessary packages if necessary
+want <- c("tidyquant","quantmod","dplyr", "plyr", "magrittr", "ggplot2", "scales", "reshape2", "PerformanceAnalytics","data.table")
+need <- want[!(want %in% installed.packages()[,"Package"])]
+if (length(need)) install.packages(need)
+lapply(want, function(i) require(i, character.only=TRUE))
+rm(want, need)
+
+# Working directories
+dir <- list()
+dir$root <- dirname(getwd())
+dir$source <- paste(dir$root,"/source",sep="")
+dir$output <- paste(dir$root,"/output",sep="")
+dir$result <- paste(dir$root, "/result", sep="")
+lapply(dir, function(i) dir.create(i, showWarnings = F))
+
 #===================FETCHING DATA===============
 
 # Output a list with such structure:
-# (xts data with "Open" "High" "Low" "Adj Close" "Volume" five columns.)
+# (xts data with "Open" "High" "Low" "Close" "Volume" five columns.)
 # data:list - dj30  :list   - AAPL:xts
 #                           - AMGN:xts
 #           - nasdaq:list   - AAPL:xts
@@ -21,8 +42,9 @@ fetch_data<-function(source_folder){
     # We do not need the 6th and 8th column which are "Adj Close" and "Ticker".
     # And after we get the xts file, we do not need 1st column which is "Date" anymore.
     stakes<-lapply(files,function(f){
-      f<-read.csv(f)[,c(-6,-8)]
-      xts(f[,-1],order.by =as.Date(f$Date, "%Y-%m-%d"))
+      f<-read.csv(f)
+      f<- f[,!((colnames(f) %in% c("Adj.Close","Ticker","adjusted","symbol","X")))]
+      xts(f[,!(colnames(f) %in% c("date","Date"))],order.by =as.Date(f[,colnames(f) %in% c("date","Date")], "%Y-%m-%d"))
     })
     
     # Reformat folder and files to a simpler way
@@ -40,6 +62,21 @@ fetch_data<-function(source_folder){
   end_time<-Sys.time()
   paste("All data have been loaded, used",end_time-start_time,"secs.") %>% print()
   return(data)
+}
+
+download_data<-function(source_folder,stocks,from,to,set_name="default_set",update_only=F){
+  start_time<-Sys.time()
+  paste("Downloading",set_name,"with",length(stocks),"items.") %>% print()
+  folder<-paste0(source_folder,"/",set_name)
+  if(!dir.exists(folder)){
+    dir.create(folder)
+  }
+  lapply(stocks,function(s){
+    data<-tq_get(s,get = "stock.prices",from=from,to=to)
+    write.csv(data,file=paste0(folder,"/",data$symbol[1],".csv"))
+  })
+  end_time<-Sys.time()
+  paste("All data have been downloaded, used",end_time-start_time,"secs.") %>% print()
 }
 
 #===================BASIC STRATEGIES===============
@@ -1017,7 +1054,7 @@ ret <- function(record){
 # This function will be rewrite
 # param: stock pool, trading strategy function
 # stock_pool is a list with xts datas.
-final <- function(stock_pool, FUN, threshold=0.05, ...){
+final <- function(stock_pool, FUN, threshold=0.05,save=F,...){
   winrate <- NULL
   FUN <- match.fun(FUN)
   length <- length(stock_pool)
